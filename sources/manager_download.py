@@ -89,6 +89,11 @@ GITHUB_API_QUERIES = {
                                 deletions
                                 committedDate
                                 oid
+                                author {
+                                    user {
+                                        login
+                                    }
+                                }
                             }
                         }
                         pageInfo {

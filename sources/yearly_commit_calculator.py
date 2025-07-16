@@ -59,12 +59,36 @@ async def update_data_with_commit_stats(repo_details: Dict, yearly_data: Dict, d
         DBM.w("\t\tSkipping repo.")
         return
 
+    total_commits = 0
+    total_additions = 0
+    total_deletions = 0
+    processed_commits = set()  # Track processed commit OIDs to avoid duplicates
     for branch in branch_data:
         commit_data = await DM.get_remote_graphql("repo_commit_list", owner=owner, name=repo_details["name"], branch=branch["name"], id=GHM.USER.node_id)
+
         for commit in commit_data:
-            date = search(r"\d+-\d+-\d+", commit["committedDate"]).group()
+            # Skip if this commit has already been processed (avoid duplicates across branches)
+            commit_oid = commit["oid"]
+            if commit_oid in processed_commits:
+                continue
+            processed_commits.add(commit_oid)
+
+            match = search(r"\d+-\d+-\d+", commit["committedDate"])
+            if match is None:
+                continue
+            date = match.group()
             curr_year = datetime.fromisoformat(date).year
             quarter = (datetime.fromisoformat(date).month - 1) // 3 + 1
+
+            # Verify author is the current user
+            author_login = commit.get("author", {}).get("user", {}).get("login", "Unknown")
+            if author_login != GHM.USER.login and author_login != "Unknown":
+                DBM.w(f"Skipping commit by {author_login} in repo {repo_details['name']} (not current user)")
+                continue
+
+            total_commits += 1
+            total_additions += commit["additions"]
+            total_deletions += commit["deletions"]
 
             if repo_details["name"] not in date_data:
                 date_data[repo_details["name"]] = dict()
@@ -84,3 +108,6 @@ async def update_data_with_commit_stats(repo_details: Dict, yearly_data: Dict, d
 
         if not EM.DEBUG_RUN:
             await sleep(0.4)
+
+    # repo_name = f"{owner}/{repo_details['name']}"
+    # print(f"Repo {repo_name} has {total_commits} commits, total additions: {total_additions}, total deletions: {total_deletions}")
